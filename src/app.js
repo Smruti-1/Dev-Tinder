@@ -4,14 +4,20 @@ const app = express();
 const User = require("./models/user");
 const {validateSignUpData} = require("../utils/validation")
 const bcrypt = require("bcrypt")
-app.use(express.json())
+const cookieParser = require("cookie-parser");
+const jwt = require("jsonwebtoken");
+const {userAuth} = require("./middlewares/auth");
+
+app.use(express.json());
+app.use(cookieParser());
+
 
 app.post("/signup", async(req,res)=>{
    try {
       // validate data
       validateSignUpData(req);
       const {firstName,lastName,emailId ,password} = req.body;
-      // Encrypt password
+      // Encrypt pas sword
 const passworHash = await bcrypt.hash(password,10)
 
    // creating new instance of user model
@@ -34,75 +40,40 @@ app.post("/login",async(req,res)=>{
 const {emailId,password} = req.body;
 
 const user = await User.findOne({emailId: emailId});
-if(!User){
+if(!user){
    throw new Error("Invalid credentials")
 }
-const isPasswordValid = await bcrypt.compare(password,user.password);
-if(!isPasswordValid){
-   res.send("Login successfull")
+const isPasswordValid = await user.validatePassword(password);
+
+if(isPasswordValid){
+   // password is correct → login success
+   const token = await user.getJWT();
+   res.cookie("token", token, {
+      expires: new Date(Date.now() + 8 * 3600000),
+   });
+   res.send("Login successful");
 }else{
-   throw new Error("Password not coorect")
+   // password is incorrect → throw error
+   throw new Error("Password not correct");
 }
+
    }catch(err){
       res.status(400).send("Error:" + err.message)
    }
 })
 
- app.get("/user",async (req,res)=> {
-   const userEmail = req.body.emailId;
-// console.log(userEmail,"userme")
-   try{
-   //   const user = await User.find({emailId : userEmail});
-    const user = await User.findOne({emailId : userEmail});
-     if(user.length === 0){
-      res.status(400).send("User not found")
-     }else{
-      res.send(user)
-     }}
-   catch(err){
-      res.status(400).send("something went wrong")
+app.get("/profile", userAuth, async(req,res)=> {
+   try {
+   const user = req.user;
+   res.send(user);
+   }catch (err) {
+    res.status(400).send("Error:" + err.message)
    }
  })
 
-app.delete("/user",async(req,res)=>{
-   const userId = req.body.userId;
-   try{
-      const user = await User.findByIdAndDelete(userId);
-      res.send("user deleted successfully");
-   }catch(err){
-      res.status(400).send("Something wrong")
-   }
-})
-
-app.patch("/user",async(req,res)=>{
-   const userId = req.body.userId;
-   const data = req.body;
-   try {
-      const AlLLOWED_UPDATES = [
-"userId",
-"photoUrl",
-"gender",
-"about",
-"age",
-"skills",
-      ];
-      const isUpdateAllowe = Object.keys(data).every((k)=>
-      AlLLOWED_UPDATES.includes(k)
-   );
-   if(!isUpdateAllowe){
-      throw new Error("Update not allowed")
-   }
-   if(data?.skills.length>10){
-      throw new Error("Skills cant be more than 10")
-   }
-     const user = await User.findByIdAndUpdate({_id: userId},data,{
-      returnDocument: "after",
-      runValidators: true,
-     });
-      res.send("User updated")
-   }catch(err){
-      res.status(400).send("Something went wrong")
-   }
+app.post("/sendConnectionRequest", userAuth, async (req, res) => {
+  const user = req.user;
+  res.send(user.firstName + " Connection request sent by him");
 });
 
     connectDB()
